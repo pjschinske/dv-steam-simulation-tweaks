@@ -38,7 +38,6 @@ namespace SteamSimulationTweaks.Patches
 				AddDelayedThrottleCalcDef(__instance,
 					S282_STEAM_CHEST_VOLUME_M3,
 					Main.Settings.s282MaxThrottleFlow,
-					false,
 					Main.Settings.enableFeedwaterHeaterChanges);
 				AlterSafetyValvePressure(__instance, Main.Settings.s282MaxBoilerPressure);
 			}
@@ -47,9 +46,12 @@ namespace SteamSimulationTweaks.Patches
 				AddDelayedThrottleCalcDef(__instance,
 					S060_STEAM_CHEST_VOLUME_M3,
 					Main.Settings.s060MaxThrottleFlow,
-					Main.Settings.enableS060VolumetricEfficiencyChanges,
 					false);
 				AlterSafetyValvePressure(__instance, Main.Settings.s060MaxBoilerPressure);
+				if (Main.Settings.enableS060VolumetricEfficiencyChanges)
+				{
+					UseS282VolumetricEfficiency(__instance);
+				}
 			}
 		}
 
@@ -87,8 +89,24 @@ namespace SteamSimulationTweaks.Patches
 
 		}
 
+		static void UseS282VolumetricEfficiency(TrainCar loco)
+		{
+			Transform sim = loco.transform.Find("[sim]");
+			GameObject steamEngineGO = sim.Find("steamEngine").gameObject;
+			var steamEngineDef = steamEngineGO.GetComponent<ReciprocatingSteamEngineDefinition>();
+			if (steamEngineDef is null)
+			{
+				Main.Logger.Error("Cannot find the steamEngineDef");
+				return;
+			}
+			GameObject s282EngineGO = TrainCarType.LocoSteamHeavy.ToV2().prefab
+				.transform.Find("[sim]/steamEngine").gameObject;
+			var s282EngineDef = s282EngineGO.GetComponent<ReciprocatingSteamEngineDefinition>();
+			steamEngineDef.volumetricEfficiency = s282EngineDef.volumetricEfficiency;
+		}
+
 		static void AddDelayedThrottleCalcDef(TrainCar loco, float steamChestVolume, float maxMassFlow,
-			bool useS282VolumetricEfficiency, bool hasFeedwaterHeater)
+			bool hasFeedwaterHeater)
 		{
 			Transform sim = loco.transform.Find("[sim]");
 
@@ -109,22 +127,7 @@ namespace SteamSimulationTweaks.Patches
 				}
 			}
 			throttleCalcGO.GetComponent<ConfigurableMultiplierDefinition>().enabled = false;
-
-			if (useS282VolumetricEfficiency)
-			{
-				GameObject steamEngineGO = sim.Find("steamEngine").gameObject;
-				var steamEngineDef = steamEngineGO.GetComponent<ReciprocatingSteamEngineDefinition>();
-				if (steamEngineDef is null)
-				{
-					Main.Logger.Error("Cannot find the steamEngineDef");
-				} else
-				{
-					GameObject s282EngineGO = TrainCarType.LocoSteamHeavy.ToV2().prefab
-						.transform.Find("[sim]/steamEngine").gameObject;
-					var s282EngineDef = s282EngineGO.GetComponent<ReciprocatingSteamEngineDefinition>();
-					steamEngineDef.volumetricEfficiency = s282EngineDef.volumetricEfficiency;
-				}
-			}
+			
 			PortReferenceConnection[] newPortReferenceConnections = {
 				new("throttleCalculator.STEAM_FLOW", "steamEngine.STEAM_FLOW"),
 				new("throttleCalculator.DUMP_FLOW", "steamEngine.DUMPED_FLOW"),

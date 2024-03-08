@@ -22,7 +22,6 @@ namespace SteamSimulationTweaks
 
 		public float steamChestVolume;
 		public float maxMassFlow;
-		public AnimationCurve volumetricEfficiency;
 
 		public override SimComponent InstantiateImplementation()
 		{
