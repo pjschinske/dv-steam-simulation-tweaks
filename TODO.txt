@@ -1,0 +1,4 @@
+- Firebox tweaks:
+    - Coal decreases firebox temp
+- Boiler tweaks:
+    - Fix SteamTables equations to work above 30 bar (lookup tables?)
