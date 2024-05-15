@@ -21,6 +21,11 @@ namespace SteamSimulationTweaks
 		private /*readonly*/ float steamChestVolume;
 		private /*readonly*/ float maxMassFlow;
 
+		private float steamChestVolumeMultiplier = 1;
+		private float maxMassFlowMultiplier = 1;
+
+		private WaterPressureVessel steamChest;
+
 		public ImprovedThrottleCalculator(ImprovedThrottleCalculatorDefinition confMult) : base(confMult.ID)
 		{
 			boilerPressure = AddPortReference(confMult.boilerPressure);
@@ -32,6 +37,13 @@ namespace SteamSimulationTweaks
 			steamChestVolume = confMult.steamChestVolume;
 			maxMassFlow = confMult.maxMassFlow;
 			steamChestPressure.Value = 0;
+			steamChest = new WaterPressureVessel(steamChestVolume, 0, steamChestTemperature.Value);
+		}
+
+		private void AddSteam(float mass)
+		{
+			steamChest.mass += mass;
+			steamChest.enthalpy += SteamTables.SteamSpecificEnthalpy(steamChest.pressure) * mass;
 		}
 
 		//TODO: tune locoScalar
@@ -43,9 +55,38 @@ namespace SteamSimulationTweaks
 		public override void Tick(float delta)
 		{
 			float totalCylSteamFlow = cylSteamFlow.Value + cylDumpSteamFlow.Value;
-			float maxThrottleSteamFlow = maxMassFlow * throttlePosition.Value;
+			float maxThrottleSteamFlow = maxMassFlow * maxMassFlowMultiplier * throttlePosition.Value;
 
 			if (totalCylSteamFlow < maxThrottleSteamFlow)
+			{
+				//if the throttle is not restricting the air flow, we slowly
+				//increase steam chest pressure all the way to boiler pressure
+				float newSteamChestPressure = steamChestPressure.Value
+					+ (maxThrottleSteamFlow - totalCylSteamFlow)
+					* Mathf.Sqrt((boilerPressure.Value - steamChestPressure.Value) / boilerPressure.Value)
+					/ steamChestVolume / steamChestVolumeMultiplier
+					* delta * 60
+					* 0.03f;
+
+				AddSteam(delta * 1000 * (maxThrottleSteamFlow - totalCylSteamFlow));
+
+				steamChestPressure.Value = Mathf.Min(newSteamChestPressure, boilerPressure.Value);
+			}
+			else if (totalCylSteamFlow > maxThrottleSteamFlow)
+			{
+				//if the throttle is restricting the air flow, we decrease the
+				//steam chest pressure until totalCylSteamFlow matches maxThrottleSteamFlow
+				//Main.Logger.Log("Cylinder steam flow: " + totalCylSteamFlow);
+				//Main.Logger.Log("Max throttle steam flow: " + maxThrottleSteamFlow);
+				float newSteamChestPressure = steamChestPressure.Value
+					- (totalCylSteamFlow - maxThrottleSteamFlow)
+					/ steamChestVolume / steamChestVolumeMultiplier
+					* delta * 60
+					* 0.03f;
+				steamChestPressure.Value = Mathf.Max(0, newSteamChestPressure);
+			}
+
+			/*if (totalCylSteamFlow < maxThrottleSteamFlow)
 			{
 				//if the throttle is not restricting the air flow, we slowly
 				//increase steam chest pressure all the way to boiler pressure
@@ -68,7 +109,7 @@ namespace SteamSimulationTweaks
 					* delta * 60
 					* 0.03f;
 				steamChestPressure.Value = Mathf.Max(0, newSteamChestPressure);
-			}
+			}*/
 		}
 	}
 }

@@ -51,5 +51,13 @@ namespace SteamSimulationTweaks
 		{
 			Settings.Save(modEntry);
 		}
+
+		internal static void Debug(string message)
+		{
+			if (Settings.enableDebugLogging)
+			{
+				Logger.Log("[DEBUG] " + message);
+			}
+		}
 	}
 }

@@ -1,5 +1,6 @@
 using dnlib.DotNet;
 using DV.Simulation.Cars;
+using DV.Simulation.Controllers;
 using DV.ThingTypes;
 using DV.ThingTypes.TransitionHelpers;
 using HarmonyLib;
@@ -16,7 +17,7 @@ namespace SteamSimulationTweaks.Patches
 	[HarmonyPatch(typeof(TrainCar), nameof(TrainCar.Awake))]
 	internal class AddRealisticThrottleSimPatch
 	{
-		public const float S282_STEAM_CHEST_DIAMETER_M = 0.15f;
+		public const float S282_STEAM_CHEST_DIAMETER_M = 0.18f;
 		public const float S282_STEAM_CHEST_LENGTH_M = 4.4f;//34f;
 		public const float S282_STEAM_CHEST_VOLUME_M3
 			= S282_STEAM_CHEST_DIAMETER_M * S282_STEAM_CHEST_DIAMETER_M / 4 * Mathf.PI * S282_STEAM_CHEST_LENGTH_M;
@@ -33,16 +34,24 @@ namespace SteamSimulationTweaks.Patches
 			{
 				return;
 			}
+
 			if (__instance.carLivery.id == "LocoS282A")
 			{
+				EnableOrDisableEmbers(__instance, Main.Settings.enableEmbers);
+				EnableOrDisableLeakyLubricator(__instance, Main.Settings.enableLeakyLubricator);
+
 				AddDelayedThrottleCalcDef(__instance,
 					S282_STEAM_CHEST_VOLUME_M3,
 					Main.Settings.s282MaxThrottleFlow,
 					Main.Settings.enableFeedwaterHeaterChanges);
 				AlterSafetyValvePressure(__instance, Main.Settings.s282MaxBoilerPressure);
+				AddSuperheaterDef(__instance);
 			}
 			else if (__instance.carLivery.id == "LocoS060")
 			{
+				EnableOrDisableEmbers(__instance, Main.Settings.enableEmbers);
+				EnableOrDisableLeakyLubricator(__instance, Main.Settings.enableLeakyLubricator);
+
 				AddDelayedThrottleCalcDef(__instance,
 					S060_STEAM_CHEST_VOLUME_M3,
 					Main.Settings.s060MaxThrottleFlow,
@@ -53,6 +62,63 @@ namespace SteamSimulationTweaks.Patches
 					UseS282VolumetricEfficiency(__instance);
 				}
 			}
+		}
+
+		static void EnableOrDisableEmbers(TrainCar loco, bool enableEmbers)
+		{
+			if (enableEmbers)
+			{
+				//the embers are already enabled by default, no need to re-enable them.
+				return;
+			}
+
+			if (loco.carLivery.id != "LocoS282A" && loco.carLivery.id != "LocoS060")
+			{
+				return;
+			}
+
+			SimController simController = loco.GetComponent<SimController>();
+			if (simController is null)
+			{
+				return;
+			}
+
+			AParticlePortReader[] apprArray = simController.particlesController?.entries;
+			if (apprArray is null)
+			{
+				return;
+			}
+
+			foreach (var appr in apprArray)
+			{
+				if (appr is not SteamSmokeParticlePortReader)
+				{
+					continue;
+				}
+				SteamSmokeParticlePortReader ssppr = (SteamSmokeParticlePortReader) appr;
+				GameObject embersGO = ssppr.emberParticlesParent;
+				foreach (var particleSystemRenderer in embersGO.GetComponentsInChildren<ParticleSystemRenderer>())
+				{
+					particleSystemRenderer.enabled = false;
+				}
+			}
+		}
+
+		static void EnableOrDisableLeakyLubricator(TrainCar loco, bool enableLeakyLubricator)
+		{
+			if (enableLeakyLubricator)
+			{
+				//lubricator is already enabled by default, no need to re-enable it.
+				return;
+			}
+
+			MechanicalLubricatorDefinition lubricator = loco.transform.Find("[sim]/lubricator")?
+				.GetComponent<MechanicalLubricatorDefinition>();
+			if (lubricator is null)
+			{
+				return;
+			}
+			lubricator.oilLeakageRate = 0;
 		}
 
 		static void AlterSafetyValvePressure(TrainCar loco, float safetyValveOpeningPressure)
@@ -155,6 +221,46 @@ namespace SteamSimulationTweaks.Patches
 				newPortReferenceConnections = newPortReferenceConnections
 					.Append(new PortReferenceConnection("feedwaterHeater.EXHAUST_PRESSURE", "steamEngine.EXHAUST_PRESSURE"))
 					.ToArray();
+			}
+
+			simConnectionDef.portReferenceConnections
+					= simConnectionDef.portReferenceConnections
+					.Concat(newPortReferenceConnections)
+					.ToArray();
+		}
+
+		static void AddSuperheaterDef(TrainCar loco)
+		{
+			Transform sim = loco.transform.Find("[sim]");
+
+			SimConnectionDefinition simConnectionDef = loco.GetComponent<SimController>().connectionsDefinition;
+			GameObject superheaterGO = new GameObject("superheater");
+			superheaterGO.transform.parent = sim.transform;
+			var superheaterDef = superheaterGO.AddComponent<SuperheaterDefinition>();
+			superheaterDef.ID = "superheater";
+
+			simConnectionDef.executionOrder = simConnectionDef.executionOrder
+					.Append(superheaterDef).ToArray();
+
+			PortReferenceConnection[] newPortReferenceConnections = {
+				new("superheater.FIREBOX_TEMPERATURE", "firebox.TEMPERATURE"),
+				new("superheater.FLUE_FLOW", "exhaust.AIR_FLOW"),
+				new("superheater.STEAM_FLOW", "steamEngine.STEAM_FLOW"),
+				new("superheater.STEAM_TEMP_IN", "boiler.TEMPERATURE"),
+			};
+
+			//replace existing steam temp connection from firebox to steamEngine
+			for (int i = 0; i < simConnectionDef.portReferenceConnections.Length; i++)
+			{
+				PortReferenceConnection prc = simConnectionDef.portReferenceConnections[i];
+				if (prc.portReferenceId == "steamEngine.STEAM_CHEST_TEMPERATURE")
+				{
+					prc.portId = "superheater.STEAM_TEMP_OUT";
+				}
+				if (prc.portReferenceId == "duplexSteamEngine.STEAM_CHEST_TEMPERATURE")
+				{
+					prc.portId = "superheater.STEAM_TEMP_OUT";
+				}
 			}
 
 			simConnectionDef.portReferenceConnections
