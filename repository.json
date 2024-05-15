@@ -2,8 +2,8 @@
 	"Releases": [
 		{
 			"Id": "SteamSimulationTweaks",
-			"Version": "0.0.0",
-			"DownloadUrl": "https://github.com/pjschinske/dv-realistic-steam-throttle/releases/download/TAG/FILE_NAME.zip"
+			"Version": "0.3.0",
+			"DownloadUrl": "https://github.com/pjschinske/dv-steam-simulation-tweaks/releases/download/v0.3.0/SteamSimulationTweaks_v0.3.0.zip"
 		}
 	]
 }
